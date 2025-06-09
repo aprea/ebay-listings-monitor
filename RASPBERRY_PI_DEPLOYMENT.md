@@ -138,9 +138,110 @@ bunx drizzle-kit push
 bun run index.ts --seed
 ```
 
-## Systemd Service Setup
+## Process Management
 
-### 1. Create Service File
+You can choose between systemd (native Linux service) or PM2 (Node.js process manager). PM2 is recommended for easier management and better logging.
+
+### Option A: PM2 Setup (Recommended)
+
+#### 1. Install PM2
+
+```bash
+# Install PM2 globally
+brew install pm2
+
+# Set PM2 to start on boot
+pm2 startup systemd -u pi --hp /home/pi
+# Follow the command output instructions
+```
+
+#### 2. Create PM2 Ecosystem File
+
+```bash
+nano ~/ebay-listings-monitor/ecosystem.config.js
+```
+
+Add the following content:
+
+```javascript
+module.exports = {
+  apps: [{
+    name: 'ebay-monitor',
+    script: 'bun',
+    args: 'run index.ts',
+    cwd: '/home/pi/ebay-listings-monitor',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'production',
+      PATH: '/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin'
+    },
+    error_file: './logs/error.log',
+    out_file: './logs/out.log',
+    log_file: './logs/combined.log',
+    time: true,
+    merge_logs: true,
+    max_restarts: 10,
+    min_uptime: '10s',
+    restart_delay: 4000,
+    exp_backoff_restart_delay: 100
+  }]
+};
+```
+
+#### 3. Start the Application
+
+```bash
+# Create logs directory
+mkdir -p ~/ebay-listings-monitor/logs
+
+# Start the application
+cd ~/ebay-listings-monitor
+pm2 start ecosystem.config.js
+
+# Save PM2 process list
+pm2 save
+
+# View logs
+pm2 logs ebay-monitor
+
+# Monitor in real-time
+pm2 monit
+```
+
+#### 4. PM2 Management Commands
+
+```bash
+# Check status
+pm2 status
+
+# Restart application
+pm2 restart ebay-monitor
+
+# Stop application
+pm2 stop ebay-monitor
+
+# View detailed info
+pm2 describe ebay-monitor
+
+# View logs
+pm2 logs ebay-monitor --lines 50
+
+# Clear logs
+pm2 flush
+
+# Update PM2
+pm2 update
+
+# Monitor resources
+pm2 monit
+```
+
+### Option B: Systemd Service Setup
+
+#### 1. Create Service File
 
 ```bash
 sudo nano /etc/systemd/system/ebay-monitor.service
@@ -201,7 +302,26 @@ sudo systemctl status ebay-monitor.service
 
 ## Monitoring and Maintenance
 
-### View Logs
+### View Logs (PM2)
+
+```bash
+# View recent logs
+pm2 logs ebay-monitor --lines 50
+
+# Follow logs in real-time
+pm2 logs ebay-monitor
+
+# View error logs only
+pm2 logs ebay-monitor --err
+
+# View logs with timestamps
+pm2 logs ebay-monitor --format
+
+# View logs from file
+tail -f ~/ebay-listings-monitor/logs/out.log
+```
+
+### View Logs (Systemd)
 
 ```bash
 # View recent logs
@@ -214,7 +334,29 @@ sudo journalctl -u ebay-monitor -f
 sudo journalctl -u ebay-monitor --since "2024-01-01 00:00:00"
 ```
 
-### Service Management
+### Service Management (PM2)
+
+```bash
+# Stop application
+pm2 stop ebay-monitor
+
+# Restart application
+pm2 restart ebay-monitor
+
+# Reload with zero downtime
+pm2 reload ebay-monitor
+
+# Delete from PM2
+pm2 delete ebay-monitor
+
+# Restart with updated code
+cd ~/ebay-listings-monitor
+git pull
+bun install
+pm2 restart ebay-monitor
+```
+
+### Service Management (Systemd)
 
 ```bash
 # Stop service
@@ -291,35 +433,88 @@ sudo sysctl -p
 ### Common Issues
 
 1. **Bun not found**
-
     ```bash
-    export PATH="$HOME/.bun/bin:$PATH"
+    # For manual execution
+    export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
     source ~/.bashrc
+    
+    # For PM2, ensure PATH is set in ecosystem.config.js
     ```
 
 2. **Database connection failed**
-
-    - Check PostgreSQL is running: `sudo systemctl status postgresql`
+    - Check PostgreSQL is running: `brew services list | grep postgresql`
+    - Restart PostgreSQL: `brew services restart postgresql@16`
     - Verify credentials in `.env`
-    - Check pg_hba.conf authentication settings
+    - Test connection: `psql -U ebaymonitor -d ebay_listings_monitor`
 
 3. **Discord bot offline**
-
     - Verify bot token in `.env`
     - Check bot has proper permissions in Discord server
     - Ensure channel ID is correct in `index.ts`
 
 4. **High memory usage**
-    - Monitor with: `htop`
-    - Adjust MemoryLimit in systemd service
+    - Monitor with: `htop` or `pm2 monit`
+    - PM2 will auto-restart at 1G (configured in ecosystem.config.js)
     - Consider reducing eBay API limit in `index.ts`
+
+5. **PM2 process not starting**
+    ```bash
+    # Check PM2 status
+    pm2 status
+    
+    # View error logs
+    pm2 logs ebay-monitor --err
+    
+    # Restart PM2 daemon
+    pm2 kill
+    pm2 resurrect
+    
+    # Reset PM2
+    pm2 delete all
+    pm2 start ecosystem.config.js
+    ```
+
+6. **Application crashes repeatedly**
+    ```bash
+    # Check crash logs
+    pm2 logs ebay-monitor --lines 100
+    
+    # Check if hitting restart limits
+    pm2 describe ebay-monitor
+    
+    # Increase restart limits in ecosystem.config.js
+    ```
 
 ### Health Checks
 
-Create a simple health check script:
+#### PM2 Health Check Script
 
 ```bash
-nano ~/check-ebay-monitor.sh
+nano ~/check-ebay-monitor-pm2.sh
+```
+
+Add:
+
+```bash
+#!/bin/bash
+APP_NAME="ebay-monitor"
+
+# Check if PM2 process is running
+STATUS=$(pm2 jlist | jq -r ".[] | select(.name==\"$APP_NAME\") | .pm2_env.status" 2>/dev/null)
+
+if [ "$STATUS" = "online" ]; then
+    echo "[$(date)] eBay Monitor (PM2) is running"
+    pm2 logs $APP_NAME --lines 1 --nostream
+else
+    echo "[$(date)] eBay Monitor (PM2) is NOT running! Attempting restart..."
+    pm2 restart $APP_NAME
+fi
+```
+
+#### Systemd Health Check Script
+
+```bash
+nano ~/check-ebay-monitor-systemd.sh
 ```
 
 Add:
@@ -327,10 +522,10 @@ Add:
 ```bash
 #!/bin/bash
 if systemctl is-active --quiet ebay-monitor; then
-    echo "eBay Monitor is running"
+    echo "[$(date)] eBay Monitor (systemd) is running"
     journalctl -u ebay-monitor -n 1 --no-pager
 else
-    echo "eBay Monitor is NOT running!"
+    echo "[$(date)] eBay Monitor (systemd) is NOT running!"
     sudo systemctl start ebay-monitor
 fi
 ```
@@ -338,14 +533,18 @@ fi
 Make executable:
 
 ```bash
-chmod +x ~/check-ebay-monitor.sh
+chmod +x ~/check-ebay-monitor-*.sh
 ```
 
 Add to crontab for regular checks:
 
 ```bash
 crontab -e
-# Add: */30 * * * * /home/pi/check-ebay-monitor.sh
+# For PM2:
+# */30 * * * * /home/pi/check-ebay-monitor-pm2.sh >> /home/pi/health-check.log 2>&1
+
+# For systemd:
+# */30 * * * * /home/pi/check-ebay-monitor-systemd.sh >> /home/pi/health-check.log 2>&1
 ```
 
 ## Backup Strategy
@@ -418,17 +617,34 @@ For visual monitoring, consider installing:
 
 ## Final Checklist
 
+### Basic Setup
 - [ ] Raspberry Pi OS 64-bit installed
-- [ ] Bun installed and working
-- [ ] PostgreSQL configured
+- [ ] Homebrew installed
+- [ ] Bun installed via Homebrew and working
+- [ ] PostgreSQL configured via Homebrew
 - [ ] Repository cloned
 - [ ] Dependencies installed (`bun install`)
 - [ ] `.env` file configured
-- [ ] Database migrations run
-- [ ] Initial seed completed
+- [ ] Database migrations run (`bunx drizzle-kit push`)
+- [ ] Initial seed completed (`bun run index.ts --seed`)
+
+### Process Management (Choose One)
+**PM2 (Recommended):**
+- [ ] PM2 installed via Homebrew
+- [ ] PM2 ecosystem.config.js created
+- [ ] Application started with PM2
+- [ ] PM2 startup configured
+- [ ] PM2 process list saved
+- [ ] Logs accessible via `pm2 logs`
+
+**Systemd (Alternative):**
 - [ ] Systemd service created and enabled
 - [ ] Service running successfully
 - [ ] Logs accessible via journalctl
+
+### Additional Setup
 - [ ] Swap file created (optional but recommended)
+- [ ] Health check script configured
 - [ ] Backup strategy implemented
-- [ ] Security measures in place
+- [ ] Security measures in place (firewall, file permissions)
+- [ ] Monitoring tools configured (optional)
