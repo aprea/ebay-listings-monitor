@@ -3,7 +3,6 @@ export const apps = [
 		name: 'ebay-listings-monitor',
 		script: 'bun',
 		args: 'run index.ts',
-		cwd: '~/git/ebay-listings-monitor',
 		instances: 1,
 		autorestart: true,
 		watch: false,
