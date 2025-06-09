@@ -1,8 +1,10 @@
 export const apps = [
 	{
 		name: 'ebay-listings-monitor',
-		script: 'bun',
-		args: 'run index.ts',
+		script: 'index.ts',
+		interpreter: '/home/linuxbrew/.linuxbrew/bin/bun',
+		interpreter_args: 'run',
+		cwd: process.cwd(),
 		instances: 1,
 		autorestart: true,
 		watch: false,

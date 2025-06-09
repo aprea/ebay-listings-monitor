@@ -95,8 +95,7 @@ If using a remote database, ensure your Pi's IP is whitelisted and you have the 
 # Install git via Homebrew
 brew install git
 
-# Clone repository
-cd ~
+# Clone repository to your preferred location
 git clone https://github.com/your-username/ebay-listings-monitor.git
 cd ebay-listings-monitor
 ```
@@ -155,7 +154,8 @@ pm2 startup systemd -u pi --hp /home/pi
 ### 2. Create PM2 Ecosystem File
 
 ```bash
-nano ~/ebay-listings-monitor/ecosystem.config.js
+# From your project directory
+nano ecosystem.config.js
 ```
 
 Add the following content:
@@ -164,8 +164,10 @@ Add the following content:
 export const apps = [
 	{
 		name: 'ebay-listings-monitor',
-		script: 'bun',
-		args: 'run index.ts',
+		script: 'index.ts',
+		interpreter: '/home/linuxbrew/.linuxbrew/bin/bun',
+		interpreter_args: 'run',
+		cwd: process.cwd(), // Uses current directory where PM2 is started
 		instances: 1,
 		autorestart: true,
 		watch: false,
@@ -190,11 +192,13 @@ export const apps = [
 ### 3. Start the Application
 
 ```bash
+# Make sure you're in your project directory
+cd /path/to/your/ebay-listings-monitor  # Replace with your actual path
+
 # Create logs directory
-mkdir -p ~/ebay-listings-monitor/logs
+mkdir -p logs
 
 # Start the application
-cd ~/ebay-listings-monitor
 pm2 start ecosystem.config.js
 
 # Save PM2 process list
@@ -252,8 +256,8 @@ pm2 logs ebay-listings-monitor --err
 # View logs with timestamps
 pm2 logs ebay-listings-monitor --format
 
-# View logs from file
-tail -f ~/ebay-listings-monitor/logs/out.log
+# View logs from file (adjust path as needed)
+tail -f ./logs/out.log
 ```
 
 ### Service Management
@@ -272,7 +276,7 @@ pm2 reload ebay-listings-monitor
 pm2 delete ebay-listings-monitor
 
 # Restart with updated code
-cd ~/ebay-listings-monitor
+cd /path/to/your/ebay-listings-monitor  # Replace with your actual path
 git pull
 bun install
 pm2 restart ebay-listings-monitor
@@ -404,7 +408,7 @@ sudo sysctl -p
 Create a health check script:
 
 ```bash
-nano ~/check-ebay-monitor.sh
+nano check-ebay-monitor.sh
 ```
 
 Add:
@@ -428,15 +432,15 @@ fi
 Make executable:
 
 ```bash
-chmod +x ~/check-ebay-monitor.sh
+chmod +x check-ebay-monitor.sh
 ```
 
 Add to crontab for regular checks:
 
 ```bash
 crontab -e
-# Add this line:
-# */30 * * * * /home/pi/check-ebay-monitor.sh >> /home/pi/health-check.log 2>&1
+# Add this line (adjust path as needed):
+# */30 * * * * /path/to/your/check-ebay-monitor.sh >> /path/to/your/health-check.log 2>&1
 ```
 
 ## Backup Strategy
@@ -444,14 +448,14 @@ crontab -e
 ### Database Backup Script
 
 ```bash
-nano ~/backup-ebay-db.sh
+nano backup-ebay-db.sh
 ```
 
 Add:
 
 ```bash
 #!/bin/bash
-BACKUP_DIR="/home/pi/backups"
+BACKUP_DIR="$HOME/backups"
 mkdir -p $BACKUP_DIR
 pg_dump -U ebaymonitor -h localhost ebay_listings_monitor | gzip > "$BACKUP_DIR/ebay_listings_monitor_$(date +%Y%m%d_%H%M%S).sql.gz"
 # Keep only last 7 backups
@@ -461,9 +465,9 @@ find $BACKUP_DIR -name "ebay_listings_monitor_*.sql.gz" -mtime +7 -delete
 Make executable and schedule:
 
 ```bash
-chmod +x ~/backup-ebay-db.sh
+chmod +x backup-ebay-db.sh
 crontab -e
-# Add: 0 2 * * * /home/pi/backup-ebay-db.sh
+# Add (adjust path as needed): 0 2 * * * /path/to/your/backup-ebay-db.sh
 ```
 
 ## Security Recommendations
