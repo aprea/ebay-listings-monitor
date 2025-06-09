@@ -2,16 +2,13 @@ export const apps = [
 	{
 		name: 'ebay-listings-monitor',
 		script: 'index.ts',
-		interpreter: '/home/linuxbrew/.linuxbrew/bin/bun',
-		interpreter_args: 'run',
-		cwd: process.cwd(),
+		interpreter: 'bun',
 		instances: 1,
 		autorestart: true,
 		watch: false,
 		max_memory_restart: '1G',
 		env: {
 			NODE_ENV: 'production',
-			PATH: '/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin',
 		},
 		error_file: './logs/error.log',
 		out_file: './logs/out.log',
