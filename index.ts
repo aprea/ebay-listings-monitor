@@ -8,8 +8,8 @@ import {
 	TextChannel,
 	EmbedBuilder,
 } from 'discord.js';
-import { db } from './src/db/index.js';
-import { listingsTable } from './src/db/schema.js';
+import { db } from './src/db/index.ts';
+import { listingsTable } from './src/db/schema.ts';
 
 // Check for --seed argument
 const isSeedMode = process.argv.includes('--seed');

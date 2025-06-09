@@ -128,6 +128,19 @@ DATABASE_URL=postgresql://ebaymonitor:your_secure_password@localhost:5432/ebay_l
 DISCORD_BOT_SECRET=your_discord_bot_token
 ```
 
+Secure the .env file:
+
+```bash
+chmod 600 .env  # Only owner can read/write
+```
+
+Verify environment variables work:
+
+```bash
+# Test that Bun can read the .env file
+bun run index.ts --seed  # Should work without Discord token errors
+```
+
 ### 4. Database Setup
 
 ```bash
@@ -155,7 +168,7 @@ pm2 startup systemd -u pi --hp /home/pi
 
 ```bash
 # From your project directory
-nano ecosystem.config.js
+nano pm2.config.js
 ```
 
 Add the following content:
@@ -165,26 +178,13 @@ export const apps = [
 	{
 		name: 'ebay-listings-monitor',
 		script: 'index.ts',
-		interpreter: '/home/linuxbrew/.linuxbrew/bin/bun',
-		interpreter_args: 'run',
-		cwd: process.cwd(), // Uses current directory where PM2 is started
-		instances: 1,
-		autorestart: true,
-		watch: false,
-		max_memory_restart: '1G',
+		interpreter: 'bun',
 		env: {
-			NODE_ENV: 'production',
-			PATH: '/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin',
+			PATH: `${process.env.HOME}/.bun/bin:${process.env.PATH}`,
 		},
 		error_file: './logs/error.log',
 		out_file: './logs/out.log',
 		log_file: './logs/combined.log',
-		time: true,
-		merge_logs: true,
-		max_restarts: 10,
-		min_uptime: '10s',
-		restart_delay: 4000,
-		exp_backoff_restart_delay: 100,
 	},
 ];
 ```
@@ -195,14 +195,18 @@ export const apps = [
 # Make sure you're in your project directory
 cd /path/to/your/ebay-listings-monitor  # Replace with your actual path
 
-# Create logs directory
+# Create logs directory with proper permissions
 mkdir -p logs
+chmod 755 logs
 
 # Start the application
-pm2 start ecosystem.config.js
+pm2 start pm2.config.js
 
 # Save PM2 process list
 pm2 save
+
+# Verify logs are being created
+ls -la logs/
 
 # View logs
 pm2 logs ebay-listings-monitor
@@ -244,20 +248,28 @@ pm2 monit
 ### View Logs
 
 ```bash
-# View recent logs
+# View recent logs via PM2
 pm2 logs ebay-listings-monitor --lines 50
 
-# Follow logs in real-time
+# Follow logs in real-time via PM2
 pm2 logs ebay-listings-monitor
 
-# View error logs only
+# View error logs only via PM2
 pm2 logs ebay-listings-monitor --err
 
-# View logs with timestamps
+# View logs with timestamps via PM2
 pm2 logs ebay-listings-monitor --format
 
-# View logs from file (adjust path as needed)
-tail -f ./logs/out.log
+# Alternative: View logs directly from files
+tail -f ./logs/combined.log  # All logs combined
+tail -f ./logs/out.log       # Standard output logs
+tail -f ./logs/error.log     # Error logs only
+
+# View logs with timestamps from files
+tail -f ./logs/out.log | while read line; do echo "$(date): $line"; done
+
+# Monitor multiple log files simultaneously
+multitail ./logs/out.log ./logs/error.log  # If multitail is installed
 ```
 
 ### Service Management
@@ -351,7 +363,7 @@ sudo sysctl -p
     export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
     source ~/.bashrc
 
-    # For PM2, ensure PATH is set in ecosystem.config.js
+    # For PM2, ensure PATH is set in pm2.config.js
     ```
 
 2. **Database connection failed**
@@ -370,7 +382,7 @@ sudo sysctl -p
 4. **High memory usage**
 
     - Monitor with: `htop` or `pm2 monit`
-    - PM2 will auto-restart at 1G (configured in ecosystem.config.js)
+    - PM2 will auto-restart at 1G (configured in pm2.config.js)
     - Consider reducing eBay API limit in `index.ts`
 
 5. **PM2 process not starting**
@@ -388,7 +400,7 @@ sudo sysctl -p
 
     # Reset PM2
     pm2 delete all
-    pm2 start ecosystem.config.js
+    pm2 start pm2.config.js
     ```
 
 6. **Application crashes repeatedly**
@@ -400,7 +412,68 @@ sudo sysctl -p
     # Check if hitting restart limits
     pm2 describe ebay-listings-monitor
 
-    # Increase restart limits in ecosystem.config.js
+    # Increase restart limits in pm2.config.js
+    ```
+
+7. **PM2 monit not showing logs or console.log not appearing**
+
+    ```bash
+    # Check if log files exist and have content
+    ls -la logs/
+
+    # Check if console output is being written to log files
+    tail -f logs/out.log &  # Start tailing in background
+    tail -f logs/error.log &
+
+    # Restart the application to see fresh console output
+    pm2 restart ebay-listings-monitor
+
+    # Kill background tail processes
+    jobs
+    kill %1 %2  # Kill the tail processes
+
+    # Check PM2 process details
+    pm2 describe ebay-listings-monitor
+
+    # Force PM2 to flush logs
+    pm2 flush ebay-listings-monitor
+
+    # If console.log still not appearing, try alternative approach:
+    pm2 delete ebay-listings-monitor
+    pm2 start pm2.config.js
+    pm2 save
+
+    # Check logs are now working
+    pm2 logs ebay-listings-monitor --lines 10
+
+    # Alternative: Use PM2 logs directly (bypasses monit)
+    pm2 logs ebay-listings-monitor --follow
+    ```
+
+8. **Environment variables not loading (Discord token errors, etc.)**
+
+    ```bash
+    # Check if .env file exists and has correct permissions
+    ls -la .env
+    cat .env  # Verify contents (be careful not to expose secrets in logs)
+
+    # Verify PM2 can access environment variables
+    pm2 describe ebay-listings-monitor | grep -A 20 "env:"
+
+    # Test environment loading
+    pm2 delete ebay-listings-monitor
+    pm2 start pm2.config.js
+
+    # Alternative: Manually set environment variables in pm2.config.js
+    # Add to the env section:
+    # DISCORD_BOT_SECRET: 'your_token_here',
+    # EBAY_PRODUCTION_CLIENT_ID: 'your_id_here',
+    # EBAY_PRODUCTION_CLIENT_SECRET: 'your_secret_here',
+    # DATABASE_URL: 'your_db_url_here'
+
+    # Check if the app works in seed mode (which doesn't use Discord)
+    bun run index.ts --seed
+    pm2 start pm2.config.js --env production -- --seed
     ```
 
 ### Health Checks
@@ -528,7 +601,7 @@ For visual monitoring, consider installing:
 ### Process Management
 
 - [ ] PM2 installed via Homebrew
-- [ ] PM2 ecosystem.config.js created
+- [ ] PM2 pm2.config.js created
 - [ ] Application started with PM2
 - [ ] PM2 startup configured
 - [ ] PM2 process list saved
