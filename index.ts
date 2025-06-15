@@ -102,6 +102,9 @@ const FOREIGN_SET_SYMBOLS = [
 	'as4a',
 ];
 
+const MIN_PRICE = 200; // Minimum price in AUD
+const MAX_PRICE = 350; // Maximum price in AUD
+
 // Discord ready event (only if not in seed mode)
 if (!isSeedMode && discordClient) {
 	discordClient.once(Events.ClientReady, () => {
@@ -231,7 +234,7 @@ async function monitorListings() {
 			limit: '200',
 			q: `(Pokémon, Pokemon) booster box -japanese -japan -jp -empty -korean -etb -metazoo -thai -chinese -equivalent -collection -bundle -"elite trainer box" -"high class" -sticker -stickers -"ex box" -tin -blister -opened -unsealed -used -"uk exclusive" -"vstar universe" -"half booster box" ${foreignSetSymbolsExclusions}`,
 			sort: 'newlyListed',
-			filter: 'buyingOptions:{FIXED_PRICE|BEST_OFFER},itemLocationCountry:AU,price:[200..350],priceCurrency:AUD',
+			filter: `buyingOptions:FIXED_PRICE,itemLocationCountry:AU,price:[${MIN_PRICE}..${MAX_PRICE}],priceCurrency:AUD`,
 		})) as components['schemas']['SearchPagedCollection'];
 
 		if (!listings.itemSummaries || listings.itemSummaries.length === 0) {
@@ -255,6 +258,18 @@ async function monitorListings() {
 			if (feedbackPercentage < 95) {
 				console.log(
 					`Skipping listing from seller with ${feedbackPercentage}% feedback: ${item.title}`
+				);
+				continue;
+			}
+
+			// Skip listings with price below minimum or above maximum
+			if (
+				item.price?.value &&
+				(parseFloat(item.price.value) < MIN_PRICE ||
+					parseFloat(item.price.value) > MAX_PRICE)
+			) {
+				console.log(
+					`Skipping listing with price out of range: ${item.title} (${item.price.value})`
 				);
 				continue;
 			}
