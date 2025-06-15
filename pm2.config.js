@@ -1,7 +1,7 @@
 export const apps = [
 	{
 		name: 'ebay-listings-monitor',
-		script: 'index.ts',
+		script: 'out/app',
 		interpreter: 'bun',
 		env: {
 			NODE_ENV: 'production',
