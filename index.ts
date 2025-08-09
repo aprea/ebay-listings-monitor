@@ -23,6 +23,11 @@ const ebayClient = new eBayApi({
 	sandbox: false,
 });
 
+ebayClient.req.instance.interceptors.request.use((config) => {
+	config.timeout = 3000;
+	return config;
+});
+
 // Initialize Discord client only if not in seed mode
 const discordClient = isSeedMode
 	? null
