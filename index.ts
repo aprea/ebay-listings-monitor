@@ -122,9 +122,7 @@ if (!isSeedMode && discordClient) {
 			console.log('Discord channel connected');
 
 			// Schedule the monitoring task to run every minute
-			const task = cron.schedule('* * * * *', monitorListings, {
-				noOverlap: true,
-			});
+			const task = cron.schedule('* * * * *', monitorListings);
 
 			// Run initial check now that Discord is ready
 			console.log('Running initial check...');
