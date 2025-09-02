@@ -127,12 +127,20 @@ if (!isSeedMode && discordClient) {
 			});
 
 			task.on('execution:overlap', () => {
-				throw new Error(
-					'Previous task still running, overlap detected'
+				console.error('Previous task still running, overlap detected');
+				process.exit(1);
+			});
+
+			task.on('execution:failed', (ctx) => {
+				console.error(
+					'Execution failed with error:',
+					ctx.execution?.error?.message
 				);
+				process.exit(1);
 			});
 		} else {
-			throw new Error('Discord channel not found');
+			console.error('Discord channel not found');
+			process.exit(1);
 		}
 	});
 }
