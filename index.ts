@@ -126,10 +126,6 @@ if (!isSeedMode && discordClient) {
 				noOverlap: true,
 			});
 
-			// Run initial check now that Discord is ready
-			console.log('Running initial check...');
-			task.execute();
-
 			task.on('execution:overlap', () => {
 				throw new Error(
 					'Previous task still running, overlap detected'
