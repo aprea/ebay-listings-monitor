@@ -3,6 +3,8 @@ export const apps = [
 		name: 'ebay-listings-monitor',
 		script: 'index.ts',
 		interpreter: 'bun',
+		watch: true,
+		ignore_watch: ['logs'],
 		env: {
 			NODE_ENV: 'production',
 			PATH: `${process.env.HOME}/.bun/bin:${process.env.PATH}`,
