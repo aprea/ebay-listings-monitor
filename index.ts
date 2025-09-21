@@ -10,6 +10,9 @@ import {
 } from 'discord.js';
 import { db } from './src/db/index.ts';
 import { listingsTable } from './src/db/schema.ts';
+import path from 'path';
+
+const HEARTBEAT_FILE = path.join(process.cwd(), 'heartbeat.txt');
 
 // Check for --seed argument
 const isSeedMode = process.argv.includes('--seed');
@@ -112,7 +115,7 @@ const MAX_PRICE = 350; // Maximum price in AUD
 
 // Discord ready event (only if not in seed mode)
 if (!isSeedMode && discordClient) {
-	discordClient.once(Events.ClientReady, () => {
+	discordClient.once(Events.ClientReady, async () => {
 		console.log('Discord bot is ready!');
 		// Get channel by ID
 		const channel = discordClient.channels.cache.get('1378646860612505692');
@@ -120,6 +123,9 @@ if (!isSeedMode && discordClient) {
 		if (channel && channel instanceof TextChannel) {
 			discordChannel = channel;
 			console.log('Discord channel connected');
+
+			// Update heartbeat file
+			await updateHeartbeat();
 
 			// Schedule the monitoring task to run every minute
 			const task = cron.schedule('* * * * *', monitorListings, {
@@ -232,86 +238,99 @@ function calculateTotalPrice(
 	return (itemPrice + shippingPrice).toFixed(2);
 }
 
+// Function to update heartbeat using Bun APIs
+async function updateHeartbeat() {
+	const timestamp = new Date().toISOString();
+	await Bun.write(HEARTBEAT_FILE, timestamp);
+	console.log(`Heartbeat updated: ${timestamp}`);
+}
+
 // Main monitoring function
 async function monitorListings() {
-	console.log(`[${new Date().toISOString()}] Checking for new listings...`);
+	try {
+		console.log(
+			`[${new Date().toISOString()}] Checking for new listings...`
+		);
 
-	// Fetch all processed item IDs once at the start
-	const processedIds = await getProcessedListingIds();
-	console.log(`Already tracking ${processedIds.size} listings`);
+		// Fetch all processed item IDs once at the start
+		const processedIds = await getProcessedListingIds();
+		console.log(`Already tracking ${processedIds.size} listings`);
 
-	const foreignSetSymbolsExclusions = FOREIGN_SET_SYMBOLS.map(
-		(symbol) => `-${symbol}`
-	).join(' ');
+		const foreignSetSymbolsExclusions = FOREIGN_SET_SYMBOLS.map(
+			(symbol) => `-${symbol}`
+		).join(' ');
 
-	const listings = (await ebayClient.buy.browse.search({
-		limit: '200',
-		q: `(Pokémon, Pokemon) booster box -japanese -japan -jp -empty -korean -etb -metazoo -thai -chinese -equivalent -collection -bundle -"elite trainer box" -"high class" -sticker -stickers -"ex box" -tin -blister -opened -unsealed -used -"uk exclusive" -"vstar universe" -"half booster box" ${foreignSetSymbolsExclusions}`,
-		sort: 'newlyListed',
-		filter: `buyingOptions:FIXED_PRICE,itemLocationCountry:AU,price:[${MIN_PRICE}..${MAX_PRICE}],priceCurrency:AUD`,
-	})) as components['schemas']['SearchPagedCollection'];
+		const listings = (await ebayClient.buy.browse.search({
+			limit: '200',
+			q: `(Pokémon, Pokemon) booster box -japanese -japan -jp -empty -korean -etb -metazoo -thai -chinese -equivalent -collection -bundle -"elite trainer box" -"high class" -sticker -stickers -"ex box" -tin -blister -opened -unsealed -used -"uk exclusive" -"vstar universe" -"half booster box" ${foreignSetSymbolsExclusions}`,
+			sort: 'newlyListed',
+			filter: `buyingOptions:FIXED_PRICE,itemLocationCountry:AU,price:[${MIN_PRICE}..${MAX_PRICE}],priceCurrency:AUD`,
+		})) as components['schemas']['SearchPagedCollection'];
 
-	if (!listings.itemSummaries || listings.itemSummaries.length === 0) {
-		console.log('No listings found');
-		return;
-	}
-
-	console.log(`Found ${listings.itemSummaries.length} listings`);
-
-	// Collect new listings to process
-	const newListings: components['schemas']['ItemSummary'][] = [];
-
-	for (const item of listings.itemSummaries) {
-		if (!item.itemId) continue;
-
-		// Skip sellers with feedback below 95%
-		const feedbackPercentage = item.seller?.feedbackPercentage
-			? parseFloat(item.seller.feedbackPercentage)
-			: 0;
-
-		if (feedbackPercentage < 95) {
-			console.log(
-				`Skipping listing from seller with ${feedbackPercentage}% feedback: ${item.title}`
-			);
-			continue;
+		if (!listings.itemSummaries || listings.itemSummaries.length === 0) {
+			console.log('No listings found');
+			return;
 		}
 
-		// Skip listings with price below minimum or above maximum
-		if (
-			item.price?.value &&
-			(parseFloat(item.price.value) < MIN_PRICE ||
-				parseFloat(item.price.value) > MAX_PRICE)
-		) {
-			console.log(
-				`Skipping listing with price out of range: ${item.title} (${item.price.value})`
-			);
-			continue;
+		console.log(`Found ${listings.itemSummaries.length} listings`);
+
+		// Collect new listings to process
+		const newListings: components['schemas']['ItemSummary'][] = [];
+
+		for (const item of listings.itemSummaries) {
+			if (!item.itemId) continue;
+
+			// Skip sellers with feedback below 95%
+			const feedbackPercentage = item.seller?.feedbackPercentage
+				? parseFloat(item.seller.feedbackPercentage)
+				: 0;
+
+			if (feedbackPercentage < 95) {
+				console.log(
+					`Skipping listing from seller with ${feedbackPercentage}% feedback: ${item.title}`
+				);
+				continue;
+			}
+
+			// Skip listings with price below minimum or above maximum
+			if (
+				item.price?.value &&
+				(parseFloat(item.price.value) < MIN_PRICE ||
+					parseFloat(item.price.value) > MAX_PRICE)
+			) {
+				console.log(
+					`Skipping listing with price out of range: ${item.title} (${item.price.value})`
+				);
+				continue;
+			}
+
+			// Check if we've already processed this listing using Set lookup (O(1))
+			if (!processedIds.has(item.itemId)) {
+				newListings.push(item);
+			}
 		}
 
-		// Check if we've already processed this listing using Set lookup (O(1))
-		if (!processedIds.has(item.itemId)) {
-			newListings.push(item);
+		console.log(`${newListings.length} new listings to process`);
+
+		if (newListings.length === 0) return;
+
+		// Batch insert all new listings into database
+		const newItemIds = newListings.map((item) => item.itemId!);
+		await insertListings(newItemIds);
+
+		// Send Discord notifications for each new listing
+		for (const item of newListings) {
+			console.log(`New listing found: ${item.title} (${item.itemId})`);
+			// Skip notifications in seed mode
+			if (!isSeedMode) {
+				await sendDiscordNotification(item);
+			}
 		}
-	}
 
-	console.log(`${newListings.length} new listings to process`);
-
-	if (newListings.length === 0) return;
-
-	// Batch insert all new listings into database
-	const newItemIds = newListings.map((item) => item.itemId!);
-	await insertListings(newItemIds);
-
-	// Send Discord notifications for each new listing
-	for (const item of newListings) {
-		console.log(`New listing found: ${item.title} (${item.itemId})`);
-		// Skip notifications in seed mode
-		if (!isSeedMode) {
-			await sendDiscordNotification(item);
+		if (isSeedMode) {
+			console.log(`Seeded ${newListings.length} listings into database`);
 		}
-	}
-
-	if (isSeedMode) {
-		console.log(`Seeded ${newListings.length} listings into database`);
+	} finally {
+		await updateHeartbeat();
 	}
 }
